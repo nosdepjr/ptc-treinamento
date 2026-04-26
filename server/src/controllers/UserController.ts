@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import prisma from "@database";
+import { UserRepository } from "../repositories/UserRepository";
 
 export const createUser = async (req: Request, res: Response) => {
   try {
@@ -11,11 +11,7 @@ export const createUser = async (req: Request, res: Response) => {
       });
     }
 
-    const userExists = await prisma.user.findFirst({
-      where: {
-        OR: [{ email }, { cpf }],
-      },
-    });
+    const userExists = await UserRepository.findByEmailOrCpf(email, cpf);
 
     if (userExists) {
       return res.status(409).json({
@@ -23,24 +19,22 @@ export const createUser = async (req: Request, res: Response) => {
       });
     }
 
-    const user = await prisma.user.create({
-      data: {
-        name,
-        email,
-        cpf,
-        password,
-      },
+    const user = await UserRepository.create({
+      name,
+      email,
+      cpf,
+      password,
     });
 
-    const userWithoutPassword = {
+    return res.status(201).json({
+      id: user.id,
       name: user.name,
       email: user.email,
       cpf: user.cpf,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
-    };
+    });
 
-    return res.status(201).json(userWithoutPassword);
   } catch (error) {
     return res.status(500).json({
       message: "Erro ao criar usuário",
@@ -51,7 +45,15 @@ export const createUser = async (req: Request, res: Response) => {
 
 export const readAllUsers = async (req: Request, res: Response) => {
   try {
-    const users = await prisma.user.findMany();
+    const { name } = req.query;
+
+    let users;
+
+    if (name) {
+      users = await UserRepository.findByName(String(name));
+    } else {
+      users = await UserRepository.findAll();
+    }
 
     const usersWithoutPassword = users.map(user => ({
       id: user.id,
@@ -72,14 +74,28 @@ export const readAllUsers = async (req: Request, res: Response) => {
   }
 };
 
+export const countUsers = async (req: Request, res: Response) => {
+  try {
+    const total = await UserRepository.count();
+
+    return res.status(200).json({
+      total,
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      message: "Erro ao contar usuários",
+      error,
+    });
+  }
+};
+
 export const updateUser = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { name, email, cpf, password } = req.body;
 
-    const userExists = await prisma.user.findUnique({
-      where: { id },
-    });
+    const userExists = await UserRepository.findById(id);
 
     if (!userExists) {
       return res.status(404).json({
@@ -94,21 +110,16 @@ export const updateUser = async (req: Request, res: Response) => {
     if (cpf) dataToUpdate.cpf = cpf;
     if (password) dataToUpdate.password = password;
 
-    const updatedUser = await prisma.user.update({
-      where: { id },
-      data: dataToUpdate,
-    });
+    const updatedUser = await UserRepository.update(id, dataToUpdate);
 
-    const userWithoutPassword = {
+    return res.status(200).json({
       id: updatedUser.id,
       name: updatedUser.name,
       email: updatedUser.email,
       cpf: updatedUser.cpf,
       createdAt: updatedUser.createdAt,
       updatedAt: updatedUser.updatedAt,
-    };
-
-    return res.status(200).json(userWithoutPassword);
+    });
 
   } catch (error) {
     return res.status(500).json({
@@ -122,9 +133,7 @@ export const deleteUser = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    const userExists = await prisma.user.findUnique({
-      where: { id },
-    });
+    const userExists = await UserRepository.findById(id);
 
     if (!userExists) {
       return res.status(404).json({
@@ -132,9 +141,7 @@ export const deleteUser = async (req: Request, res: Response) => {
       });
     }
 
-    await prisma.user.delete({
-      where: { id },
-    });
+    await UserRepository.delete(id);
 
     return res.status(200).json({
       message: "Usuário deletado com sucesso",
